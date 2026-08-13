@@ -74,6 +74,7 @@
   .stat-pill .l{ font-size:10.5px; color:#C7E3D2; text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
   .stat-pill.warn .n{ color:#FBBF24; }
   .stat-pill.danger .n{ color:#FCA5A5; }
+  .stat-pill.done .n{ color:#7FD99A; }
 
   /* Nav tabs */
   .tabbar{
@@ -427,11 +428,13 @@ function renderStats(){
   const overdue = ACTIONS.filter(a=>a.status==="Overdue").length;
   const progress = ACTIONS.filter(a=>a.status==="In Progress").length;
   const open = ACTIONS.filter(a=>a.status==="Open").length;
+  const done = ACTIONS.filter(a=>a.status==="Done").length;
   document.getElementById('statRow').innerHTML = `
     <div class="stat-pill"><div class="n">${total}</div><div class="l">Total Action Items</div></div>
     <div class="stat-pill danger"><div class="n">${overdue}</div><div class="l">Overdue</div></div>
     <div class="stat-pill warn"><div class="n">${progress}</div><div class="l">In Progress</div></div>
     <div class="stat-pill"><div class="n">${open}</div><div class="l">Open</div></div>
+    <div class="stat-pill done"><div class="n">${done}</div><div class="l">Done</div></div>
     <div class="stat-pill"><div class="n">${MEETINGS.length}</div><div class="l">Meetings Logged</div></div>
   `;
 }
