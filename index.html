@@ -1,370 +1,885 @@
-/**
- * MoM Command Center — Apps Script Backend
- * HCS & GPA, PT Energi Mega Persada Tbk
- *
- * SETUP:
- * 1. Buat Google Sheet baru dengan 3 tab: "Meetings", "Actions", "Decisions"
- * 2. Header row masing-masing tab:
- *    Meetings  : id | date | title | agenda | notulis
- *    Actions   : meeting | item | pic | target | status
- *    Decisions : meeting | topic | text
- * 3. Extensions > Apps Script, tempel file ini sebagai Code.gs
- * 4. Deploy > New deployment > Web app
- *    - Execute as: Me
- *    - Who has access: Anyone (atau sesuaikan kebijakan internal EMP)
- * 5. Copy Web App URL, pasang di index.html sebagai API_URL, ganti seed data
- *    dengan fetch(API_URL) saat load.
- */
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HCS & GPA — MoM Command Center</title>
+<style>
+  :root{
+    --navy:#14532D;
+    --navy-deep:#0D3B20;
+    --gold:#22C55E;
+    --gold-soft:#DCFCE7;
+    --paper:#F6F5F2;
+    --ink:#22262B;
+    --ink-soft:#5B6270;
+    --line:#E1DFDA;
+    --ok:#15803D;
+    --warn:#D97706;
+    --danger:#DC2626;
+    --card:#FFFFFF;
+    font-family:'Calibri','Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    min-height:100vh;
+  }
+  ::selection{ background:var(--gold-soft); }
 
-/**
- * ONE-CLICK SETUP
- * ----------------
- * 1. In the Apps Script editor toolbar, select the function "setup" from the
- *    dropdown next to the Run button, then click Run.
- * 2. First run asks for permission — click "Review permissions" > pick your
- *    account > "Advanced" > "Go to project (unsafe)" > Allow. This is normal
- *    for scripts you write yourself.
- * 3. Open View > Logs (or Executions). You'll see the new Spreadsheet URL —
- *    open it, that's your live database, pre-filled with the 11 Aug meeting.
- * 4. Deploy > New deployment > Web app > Execute as "Me" > Who has access
- *    "Anyone" (or "Anyone within EMP" if that option exists on your Workspace)
- *    > Deploy. Copy the Web app URL it gives you.
- * 5. Paste that URL into API_URL at the top of index.html's <script> block.
- *    Done — the dashboard now reads/writes live from the sheet.
- *
- * You never need to touch SHEET_ID manually — setup() saves it for you.
- */
-function setup() {
-  const existing = PropertiesService.getScriptProperties().getProperty("SHEET_ID");
-  if (existing) {
-    Logger.log("Already set up. Sheet: https://docs.google.com/spreadsheets/d/" + existing);
-    return;
+  /* Header */
+  .masthead{
+    background:linear-gradient(135deg, var(--navy-deep) 0%, var(--navy) 60%, #1E7A46 100%);
+    color:#fff;
+    padding:28px 40px 24px;
+    position:relative;
+    overflow:hidden;
+  }
+  .masthead::after{
+    content:"";
+    position:absolute; right:-60px; top:-60px;
+    width:260px; height:260px;
+    border:1px solid rgba(34,197,94,0.25);
+    border-radius:50%;
+  }
+  .masthead::before{
+    content:"";
+    position:absolute; right:20px; top:40px;
+    width:160px; height:160px;
+    border:1px solid rgba(34,197,94,0.18);
+    border-radius:50%;
+  }
+  .eyebrow{
+    font-size:11px; letter-spacing:2.5px; text-transform:uppercase;
+    color:var(--gold-soft); opacity:.85; font-weight:600;
+  }
+  .masthead h1{
+    font-size:26px; font-weight:700; margin-top:6px; letter-spacing:.2px;
+  }
+  .masthead .sub{
+    color:#C7E3D2; font-size:13px; margin-top:4px;
+  }
+  .stat-row{
+    display:flex; gap:14px; margin-top:20px; flex-wrap:wrap; position:relative; z-index:1;
+  }
+  .stat-pill{
+    background:rgba(255,255,255,0.08);
+    border:1px solid rgba(255,255,255,0.14);
+    border-radius:10px;
+    padding:10px 16px;
+    min-width:120px;
+  }
+  .stat-pill .n{ font-size:22px; font-weight:700; color:#fff; line-height:1; }
+  .stat-pill .l{ font-size:10.5px; color:#C7E3D2; text-transform:uppercase; letter-spacing:1px; margin-top:4px; }
+  .stat-pill.warn .n{ color:#FBBF24; }
+  .stat-pill.danger .n{ color:#FCA5A5; }
+  .stat-pill.done .n{ color:#7FD99A; }
+
+  /* Nav tabs */
+  .tabbar{
+    display:flex; gap:4px;
+    background:#fff;
+    padding:0 40px;
+    border-bottom:1px solid var(--line);
+    position:sticky; top:0; z-index:10;
+  }
+  .tab{
+    padding:14px 18px;
+    font-size:13.5px; font-weight:600;
+    color:var(--ink-soft);
+    cursor:pointer;
+    border-bottom:3px solid transparent;
+    display:flex; align-items:center; gap:7px;
+    transition:.15s;
+  }
+  .tab:hover{ color:var(--navy); }
+  .tab.active{ color:var(--navy); border-bottom-color:var(--gold); }
+  .tab .count{
+    background:var(--paper); color:var(--ink-soft);
+    font-size:11px; font-weight:700;
+    padding:1px 7px; border-radius:20px;
+  }
+  .tab.active .count{ background:var(--gold-soft); color:var(--navy); }
+
+  main{ padding:28px 40px 60px; max-width:1280px; margin:0 auto; }
+  .view{ display:none; animation:fade .25s ease; }
+  .view.active{ display:block; }
+  @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+
+  .toolbar{
+    display:flex; gap:10px; align-items:center; margin-bottom:18px; flex-wrap:wrap;
+  }
+  .toolbar input[type=text]{
+    flex:1; min-width:200px;
+    padding:9px 14px; border:1px solid var(--line); border-radius:8px;
+    font-size:13px; background:#fff;
+  }
+  .toolbar select{
+    padding:9px 12px; border:1px solid var(--line); border-radius:8px;
+    font-size:13px; background:#fff; color:var(--ink);
+  }
+  .chip-filter{ display:flex; gap:6px; flex-wrap:wrap; }
+  .chip{
+    padding:6px 13px; border-radius:20px; font-size:12px; font-weight:600;
+    border:1px solid var(--line); background:#fff; color:var(--ink-soft); cursor:pointer;
+  }
+  .chip.active{ background:var(--navy); color:#fff; border-color:var(--navy); }
+
+  /* Tracker table */
+  .table-wrap{
+    background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden;
+  }
+  table{ width:100%; border-collapse:collapse; }
+  thead tr{ background:var(--navy); }
+  th{
+    text-align:left; padding:12px 16px; color:#fff; font-size:11.5px;
+    text-transform:uppercase; letter-spacing:.6px; font-weight:600;
+  }
+  tbody tr{ border-top:1px solid var(--line); transition:.1s; }
+  tbody tr:hover{ background:#FAFAF8; }
+  td{ padding:13px 16px; font-size:13px; vertical-align:top; }
+  td.item{ max-width:340px; line-height:1.45; }
+  .pic{ color:var(--ink-soft); font-size:12.5px; }
+  .badge{
+    display:inline-block; padding:3px 10px; border-radius:20px;
+    font-size:11px; font-weight:700; letter-spacing:.3px;
+  }
+  .badge.open{ background:#E9EEF7; color:var(--navy); }
+  .badge.progress{ background:#FCF2DD; color:var(--warn); }
+  .badge.overdue{ background:#F8E4DF; color:var(--danger); }
+  .badge.done{ background:#E3F1EA; color:var(--ok); }
+  .meeting-tag{
+    font-size:11px; color:var(--ink-soft); background:var(--paper);
+    padding:3px 9px; border-radius:6px; display:inline-block;
   }
 
-  const ss = SpreadsheetApp.create("MoM Command Center — HCS & GPA");
-  const meetings = ss.insertSheet("Meetings");
-  const actions = ss.insertSheet("Actions");
-  const decisions = ss.insertSheet("Decisions");
-  ss.deleteSheet(ss.getSheetByName("Sheet1"));
-
-  meetings.appendRow(["id", "date", "title", "agenda", "notulis"]);
-  actions.appendRow(["meeting", "item", "pic", "target", "status"]);
-  decisions.appendRow(["meeting", "topic", "text"]);
-
-  meetings.appendRow([
-    "M-20260811", "2026-08-11",
-    "Temuan NFI HC/HCS – PMOC/PEMOSI, SOP & Training/Kompetensi, Rencana AI",
-    "Status temuan NFI HC/HCS, sosialisasi PMOC/PEMOSI, pembaruan SOP & training/kompetensi, rencana penggunaan AI untuk dokumentasi HC",
-    "Adhikya Triputra Muluk",
-  ]);
-
-  const seedActions = [
-    ["M-20260811", "Sosialisasi internal PMOC & Training Matrix", "Mas Dhika / Mas Eri / Tim HC", "Kamis (internal)", "Open"],
-    ["M-20260811", "Siapkan format release (form lepas & terima) dan evidence training matrix untuk sesi Kamis", "Mas Eri / Mas Hadi", "Sebelum Kamis", "In Progress"],
-    ["M-20260811", "Finalisasi risk matrix terkait PMOC & dampak pada SOP PEMOSI", "Tim HC + Risk Owner", "Siang ini (follow up)", "Overdue"],
-    ["M-20260811", "Buat folder bersama (BL) untuk drop prosedur & evidence, berikan akses ke HCS", "Tim IT / HC", "Segera", "Open"],
-    ["M-20260811", "Kumpulkan dan prioritaskan daftar SOP HC/Medikal untuk update", "Seluruh Divisi HC", "Minggu depan", "Open"],
-    ["M-20260811", "Minta unit bisnis (level GM) mendetailkan posisi kritikal untuk menutup temuan rekrutmen", "HC (koordinasi ke unit terkait)", "Minggu depan", "Open"],
-    ["M-20260811", "Konfirmasi kasus sertifikasi bermasalah (rigger) dengan unit Gandewa dan user; tentukan tindak lanjut", "HC + User (Jawan/Gandewa)", "Segera", "In Progress"],
-    ["M-20260811", "Integrasi training/kompetensi ke HRIS & dashboard; setup reminder expiry (default 60 hari)", "Mas Eri (koordinasi HRIS) & Bagas/IT", "Segera", "Open"],
-    ["M-20260811", "Jadwalkan pertemuan koordinasi dengan E3S untuk 6 poin temuan", "PIC E3S + Mas Tiwai", "Minggu depan", "Open"],
-    ["M-20260811", "Putuskan kebijakan pelaporan fatality ke aparat (keputusan manajemen)", "Manajemen + Legal + Security", "Agenda manajerial / BCP", "Open"],
-  ];
-  seedActions.forEach(r => actions.appendRow(r));
-
-  const seedDecisions = [
-    ["M-20260811", "Perubahan Organisasi / PMOC", "Sosialisasi internal PMOC & HCS dijadwalkan hari Kamis; Mas Eri diminta menyiapkan format release dan training matrix untuk disampaikan pada sesi tersebut."],
-    ["M-20260811", "Temuan Kompetensi & Kesehatan Kerja", "Dua isu (kompetensi pencegahan & ergonomi) dibahas siang ini bersama tim sosial; workshop internal HC dilanjutkan minggu depan fokus HC & medikal."],
-    ["M-20260811", "Training Matrix & Sistem Pendukung", "Mas Eri berkoordinasi dengan HRIS untuk integrasi; minggu depan HC fokus pada inventarisasi SOP dan penyusunan daftar prioritas pembaruan."],
-    ["M-20260811", "Penggunaan AI untuk Dokumentasi HC", "Menyiapkan daftar SOP/komponen (training matrix, kompetensi matrix, jobdesc) untuk dimasukkan ke kolam data AI; pembahasan lanjutan minggu depan."],
-    ["M-20260811", "Rekrutmen & Posisi Kritikal", "Meminta rincian posisi dari unit bisnis; apabila unit tidak memberikan detail, HC menutup temuan dengan mekanisme 'new issue'."],
-    ["M-20260811", "Validasi Sertifikasi & Kualitas Kandidat", "Follow up setiap kasus ke unit terkait (user) dan konfirmasi akar masalah sebelum menentukan tindakan training ulang atau rekrut ulang."],
-    ["M-20260811", "Temuan Overdue & Evidence Upload", "Memperbarui target dan mengunggah evidence ke folder bersama (akses BL), serta mengirimkan update kepada pihak terkait dengan pencatatan nama penerima."],
-    ["M-20260811", "Koordinasi E3S", "Melakukan follow up dan menjadwalkan meeting bersama E3S untuk finalisasi progres 6 poin temuan."],
-    ["M-20260811", "Fatality / Pelaporan ke Kepolisian", "Diperlukan penentuan kebijakan tingkat manajemen terkait kewajiban pelaporan ke aparat apabila terjadi fatality; dimasukkan ke agenda workshop lanjutan."],
-  ];
-  seedDecisions.forEach(r => decisions.appendRow(r));
-
-  [meetings, actions, decisions].forEach(sh => sh.setFrozenRows(1));
-
-  PropertiesService.getScriptProperties().setProperty("SHEET_ID", ss.getId());
-  Logger.log("Setup complete. Open your new sheet here: " + ss.getUrl());
-}
-
-function getSheetId_() {
-  const id = PropertiesService.getScriptProperties().getProperty("SHEET_ID");
-  if (!id) throw new Error("Run setup() first (see instructions at top of this file).");
-  return id;
-}
-
-/**
- * Self-healing: creates the "Documents" tab the first time it's needed,
- * so existing sheets (set up before this feature existed) don't need any
- * manual migration.
- */
-function ensureDocumentsSheet_(ss) {
-  let sheet = ss.getSheetByName("Documents");
-  if (!sheet) {
-    sheet = ss.insertSheet("Documents");
-    sheet.appendRow(["meeting", "name", "url"]);
-    sheet.setFrozenRows(1);
+  /* Decision log */
+  .dlog{ display:flex; flex-direction:column; gap:14px; }
+  .dcard{
+    background:var(--card); border:1px solid var(--line); border-left:4px solid var(--gold);
+    border-radius:10px; padding:16px 20px;
   }
-  return sheet;
-}
-
-/**
- * Self-healing: creates a Google Drive folder to hold uploaded documents,
- * the first time it's needed. Folder ID is remembered so every upload
- * lands in the same place instead of scattering across Drive root.
- */
-function ensureDocsFolder_() {
-  const props = PropertiesService.getScriptProperties();
-  const existingId = props.getProperty("DOCS_FOLDER_ID");
-  if (existingId) {
-    try { return DriveApp.getFolderById(existingId); } catch (e) { /* fall through and recreate */ }
+  .dcard .meta{
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
   }
-  const folder = DriveApp.createFolder("MoM Command Center — Documents");
-  props.setProperty("DOCS_FOLDER_ID", folder.getId());
-  return folder;
-}
-
-/**
- * Uploading files needs Drive access, which is a NEW permission on top of
- * the Sheets access setup() already asked for. Run this once manually from
- * the editor (select "authorizeDriveAccess" in the function dropdown, click
- * Run) to trigger Google's permission prompt for Drive — same "Advanced >
- * Go to project (unsafe) > Allow" flow as before. Then redeploy as usual.
- */
-function authorizeDriveAccess() {
-  const folder = ensureDocsFolder_();
-  Logger.log("Drive access OK. Documents folder: " + folder.getUrl());
-}
-
-function doGet(e) {
-  const action = e.parameter.action || "all";
-  const ss = SpreadsheetApp.openById(getSheetId_());
-
-  if (action === "all") {
-    return jsonResponse({
-      meetings: sheetToObjects(ss.getSheetByName("Meetings")),
-      actions: sheetToObjects(ss.getSheetByName("Actions")),
-      decisions: sheetToObjects(ss.getSheetByName("Decisions")),
-      documents: sheetToObjects(ensureDocumentsSheet_(ss)),
-    });
+  .dcard .topic{ font-weight:700; color:var(--navy); font-size:13.5px; }
+  .dcard .date{ font-size:11.5px; color:var(--ink-soft); }
+  .dcard .text{ font-size:13.5px; line-height:1.55; color:var(--ink); }
+  .dcard-actions{ display:flex; gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid var(--line); }
+  .dcard-btn{
+    background:none; border:1px solid var(--line); border-radius:7px;
+    padding:4px 10px; font-size:11.5px; font-weight:600; color:var(--ink-soft); cursor:pointer;
   }
-  if (action === "meetings") return jsonResponse(sheetToObjects(ss.getSheetByName("Meetings")));
-  if (action === "actions") return jsonResponse(sheetToObjects(ss.getSheetByName("Actions")));
-  if (action === "decisions") return jsonResponse(sheetToObjects(ss.getSheetByName("Decisions")));
-  if (action === "documents") return jsonResponse(sheetToObjects(ensureDocumentsSheet_(ss)));
+  .dcard-btn:hover{ background:var(--paper); color:var(--ink); }
+  .dcard-btn.danger:hover{ background:#F8E4DF; color:var(--danger); border-color:#F8E4DF; }
 
-  return jsonResponse({ error: "Unknown action" });
+  /* Meeting index */
+  .mgrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
+  .mcard{
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:18px 20px; cursor:pointer; transition:.15s; position:relative;
+  }
+  .mcard:hover{ border-color:var(--gold); box-shadow:0 4px 14px rgba(31,56,100,.08); transform:translateY(-1px); }
+  .mcard .date-tag{
+    font-size:11px; font-weight:700; color:var(--gold); text-transform:uppercase; letter-spacing:.5px;
+  }
+  .mcard h3{ font-size:15px; color:var(--navy); margin:6px 0 8px; line-height:1.35; }
+  .mcard p{ font-size:12.5px; color:var(--ink-soft); line-height:1.5; margin-bottom:12px; }
+  .mcard .mstats{ display:flex; gap:14px; font-size:11.5px; color:var(--ink-soft); border-top:1px solid var(--line); padding-top:10px;}
+  .mcard .mstats b{ color:var(--ink); }
+  .mcard .del-btn{
+    position:absolute; top:14px; right:16px; z-index:2;
+    background:none; border:none; color:var(--ink-soft); font-size:14px;
+    cursor:pointer; padding:4px 6px; border-radius:6px; opacity:.6;
+  }
+  .mcard .del-btn:hover{ opacity:1; background:#F8E4DF; color:var(--danger); }
+
+  .doc-list{ display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+  .doc-link{
+    display:flex; align-items:center; gap:6px; font-size:12px; color:var(--navy);
+    text-decoration:none; padding:5px 8px; background:var(--paper); border-radius:6px;
+  }
+  .doc-link:hover{ background:var(--gold-soft); }
+  .doc-link .doc-x{
+    margin-left:auto; color:var(--ink-soft); font-weight:700; padding:0 3px;
+  }
+  .doc-link .doc-x:hover{ color:var(--danger); }
+  .doc-add-btn{
+    display:inline-flex; align-items:center; gap:5px;
+    font-size:11.5px; font-weight:700; color:var(--gold); background:none;
+    border:1px dashed var(--gold); border-radius:8px; padding:5px 10px;
+    cursor:pointer; margin-bottom:10px;
+  }
+  .doc-add-btn:hover{ background:var(--gold-soft); }
+
+  .empty{ text-align:center; padding:60px 20px; color:var(--ink-soft); }
+  .empty .icon{ font-size:34px; margin-bottom:10px; }
+
+  footer{ text-align:center; padding:20px; font-size:11px; color:var(--ink-soft); }
+
+  /* Add buttons */
+  .btn-add{
+    background:var(--gold); color:#fff; border:none; border-radius:8px;
+    padding:9px 16px; font-size:13px; font-weight:700; cursor:pointer;
+    display:flex; align-items:center; gap:6px; white-space:nowrap;
+    transition:.15s;
+  }
+  .btn-add:hover{ background:#16A34A; }
+
+  /* Editable status select styled as badge */
+  select.status-select{
+    border:none; border-radius:20px; font-size:11px; font-weight:700;
+    letter-spacing:.3px; padding:4px 22px 4px 10px; cursor:pointer;
+    -webkit-appearance:none; appearance:none;
+    background-repeat:no-repeat; background-position:right 7px center; background-size:9px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235B6270'/%3E%3C/svg%3E");
+  }
+  select.status-select.open{ background-color:#E9EEF7; color:var(--navy); }
+  select.status-select.progress{ background-color:#FCF2DD; color:var(--warn); }
+  select.status-select.overdue{ background-color:#F8E4DF; color:var(--danger); }
+  select.status-select.done{ background-color:#E3F1EA; color:var(--ok); }
+
+  /* Modal */
+  .modal-overlay{
+    display:none; position:fixed; inset:0; background:rgba(13,59,32,0.45);
+    z-index:100; align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-overlay.active{ display:flex; }
+  .modal{
+    background:#fff; border-radius:14px; width:100%; max-width:480px;
+    max-height:88vh; overflow-y:auto; box-shadow:0 20px 50px rgba(0,0,0,.25);
+  }
+  .modal-head{
+    background:var(--navy); color:#fff; padding:18px 22px; border-radius:14px 14px 0 0;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .modal-head h3{ font-size:16px; font-weight:700; }
+  .modal-head .x{ cursor:pointer; font-size:20px; line-height:1; opacity:.8; }
+  .modal-head .x:hover{ opacity:1; }
+  .modal-body{ padding:20px 22px; display:flex; flex-direction:column; gap:14px; }
+  .field label{ display:block; font-size:12px; font-weight:700; color:var(--ink-soft); margin-bottom:5px; }
+  .field input, .field select, .field textarea{
+    width:100%; padding:9px 12px; border:1px solid var(--line); border-radius:8px;
+    font-size:13px; font-family:inherit; background:#fff; color:var(--ink);
+  }
+  .field textarea{ resize:vertical; min-height:70px; }
+  .modal-foot{ padding:16px 22px 22px; display:flex; gap:10px; justify-content:flex-end; }
+  .btn-secondary{
+    background:var(--paper); color:var(--ink-soft); border:1px solid var(--line);
+    border-radius:8px; padding:9px 18px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .btn-primary{
+    background:var(--gold); color:#fff; border:none; border-radius:8px;
+    padding:9px 18px; font-size:13px; font-weight:700; cursor:pointer;
+  }
+  .btn-primary:hover{ background:#16A34A; }
+  .btn-primary:disabled{ opacity:.6; cursor:default; }
+  .form-msg{ font-size:12px; padding:0 22px 4px; }
+  .form-msg.error{ color:var(--danger); }
+  .form-msg.ok{ color:var(--ok); }
+
+
+  @media (max-width:720px){
+    .masthead, .tabbar, main{ padding-left:18px; padding-right:18px; }
+    table{ font-size:12px; }
+    th, td{ padding:10px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="eyebrow">PT Energi Mega Persada Tbk — Human Capital Services & GPA</div>
+  <h1>MoM Command Center</h1>
+  <div class="sub">Action tracking, decision log, dan arsip rapat dalam satu tempat</div>
+  <div id="syncStatus" style="margin-top:10px; font-size:11.5px; color:#C7E3D2;"></div>
+  <div class="stat-row" id="statRow"></div>
+</div>
+
+<div class="tabbar">
+  <div class="tab active" data-view="tracker">Action Tracker <span class="count" id="cTracker">0</span></div>
+  <div class="tab" data-view="decisions">Decision Log <span class="count" id="cDecisions">0</span></div>
+  <div class="tab" data-view="meetings">Meeting Index <span class="count" id="cMeetings">0</span></div>
+</div>
+
+<main>
+
+  <!-- TRACKER VIEW -->
+  <section class="view active" id="view-tracker">
+    <div class="toolbar">
+      <input type="text" id="trackerSearch" placeholder="Cari action item, PIC, atau meeting…">
+      <select id="picFilter"><option value="">Semua PIC</option></select>
+      <div class="chip-filter" id="statusChips">
+        <div class="chip active" data-status="all">Semua</div>
+        <div class="chip" data-status="Open">Open</div>
+        <div class="chip" data-status="In Progress">In Progress</div>
+        <div class="chip" data-status="Overdue">Overdue</div>
+        <div class="chip" data-status="Done">Done</div>
+      </div>
+      <button class="btn-add" onclick="openModal('action')">🔒 + Tambah Action</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th style="width:38%">Tindak Lanjut</th><th>PIC</th><th>Target</th><th>Meeting</th><th>Status</th></tr>
+        </thead>
+        <tbody id="trackerBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- DECISION LOG VIEW -->
+  <section class="view" id="view-decisions">
+    <div class="toolbar">
+      <input type="text" id="decisionSearch" placeholder="Cari keputusan berdasarkan topik atau kata kunci…">
+      <button class="btn-add" onclick="editingDecision=null; openModal('decision')">🔒 + Tambah Keputusan</button>
+    </div>
+    <div class="dlog" id="decisionLog"></div>
+  </section>
+
+  <!-- MEETING INDEX VIEW -->
+  <section class="view" id="view-meetings">
+    <div class="toolbar">
+      <input type="text" id="meetingSearch" placeholder="Cari meeting berdasarkan judul atau agenda…">
+      <button class="btn-add" onclick="openModal('meeting')">🔒 + Tambah Meeting</button>
+    </div>
+    <div class="mgrid" id="meetingGrid"></div>
+  </section>
+
+</main>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">Tambah Data</h3>
+      <span class="x" onclick="closeModal()">&times;</span>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="form-msg" id="modalMsg"></div>
+    <div class="modal-foot">
+      <button class="btn-secondary" onclick="closeModal()">Batal</button>
+      <button class="btn-primary" id="modalSubmit" onclick="submitModal()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<footer>Tersambung ke Google Sheets via Apps Script — MoM Command Center, HCS & GPA.</footer>
+
+<script>
+/* =====================================================================
+   KONEKSI KE GOOGLE SHEETS
+   1. Jalankan setup() di Apps Script (lihat instruksi di atas Code.gs)
+   2. Deploy sebagai Web App, copy URL-nya
+   3. Paste URL itu di bawah ini, di antara tanda kutip
+   Kalau dikosongin, dashboard otomatis jalan pakai data contoh (offline demo).
+   ===================================================================== */
+const API_URL = "https://script.google.com/macros/s/AKfycbzOBFtZDhCiOJ30_XqGwH7-Gev-SthVJpHWaxsmd4cLJHQDDmzVb8OrR30EyxW9hbzNtg/exec";
+
+/* ===================== SEED DATA (fallback / demo) ===================== */
+let MEETINGS = [
+  {
+    id:"M-20260811",
+    date:"2026-08-11",
+    title:"Temuan NFI HC/HCS – PMOC/PEMOSI, SOP & Training/Kompetensi, Rencana AI",
+    agenda:"Status temuan NFI HC/HCS, sosialisasi PMOC/PEMOSI, pembaruan SOP & training/kompetensi, rencana penggunaan AI untuk dokumentasi HC",
+    notulis:"Adhikya Triputra Muluk"
+  }
+];
+
+let ACTIONS = [
+  { meeting:"M-20260811", item:"Sosialisasi internal PMOC & Training Matrix", pic:"Mas Dhika / Mas Eri / Tim HC", target:"Kamis (internal)", status:"Open" },
+  { meeting:"M-20260811", item:"Siapkan format release (form lepas & terima) dan evidence training matrix untuk sesi Kamis", pic:"Mas Eri / Mas Hadi", target:"Sebelum Kamis", status:"In Progress" },
+  { meeting:"M-20260811", item:"Finalisasi risk matrix terkait PMOC & dampak pada SOP PEMOSI", pic:"Tim HC + Risk Owner", target:"Siang ini (follow up)", status:"Overdue" },
+  { meeting:"M-20260811", item:"Buat folder bersama (BL) untuk drop prosedur & evidence, berikan akses ke HCS", pic:"Tim IT / HC", target:"Segera", status:"Open" },
+  { meeting:"M-20260811", item:"Kumpulkan dan prioritaskan daftar SOP HC/Medikal untuk update", pic:"Seluruh Divisi HC", target:"Minggu depan", status:"Open" },
+  { meeting:"M-20260811", item:"Minta unit bisnis (level GM) mendetailkan posisi kritikal untuk menutup temuan rekrutmen", pic:"HC (koordinasi ke unit terkait)", target:"Minggu depan", status:"Open" },
+  { meeting:"M-20260811", item:"Konfirmasi kasus sertifikasi bermasalah (rigger) dengan unit Gandewa dan user; tentukan tindak lanjut", pic:"HC + User (Jawan/Gandewa)", target:"Segera", status:"In Progress" },
+  { meeting:"M-20260811", item:"Integrasi training/kompetensi ke HRIS & dashboard; setup reminder expiry (default 60 hari)", pic:"Mas Eri (koordinasi HRIS) & Bagas/IT", target:"Segera", status:"Open" },
+  { meeting:"M-20260811", item:"Jadwalkan pertemuan koordinasi dengan E3S untuk 6 poin temuan", pic:"PIC E3S + Mas Tiwai", target:"Minggu depan", status:"Open" },
+  { meeting:"M-20260811", item:"Putuskan kebijakan pelaporan fatality ke aparat (keputusan manajemen)", pic:"Manajemen + Legal + Security", target:"Agenda manajerial / BCP", status:"Open" },
+];
+
+let DECISIONS = [
+  { meeting:"M-20260811", topic:"Perubahan Organisasi / PMOC", text:"Sosialisasi internal PMOC & HCS dijadwalkan hari Kamis; Mas Eri diminta menyiapkan format release dan training matrix untuk disampaikan pada sesi tersebut." },
+  { meeting:"M-20260811", topic:"Temuan Kompetensi & Kesehatan Kerja", text:"Dua isu (kompetensi pencegahan & ergonomi) dibahas siang ini bersama tim sosial; workshop internal HC dilanjutkan minggu depan fokus HC & medikal." },
+  { meeting:"M-20260811", topic:"Training Matrix & Sistem Pendukung", text:"Mas Eri berkoordinasi dengan HRIS untuk integrasi; minggu depan HC fokus pada inventarisasi SOP dan penyusunan daftar prioritas pembaruan." },
+  { meeting:"M-20260811", topic:"Penggunaan AI untuk Dokumentasi HC", text:"Menyiapkan daftar SOP/komponen (training matrix, kompetensi matrix, jobdesc) untuk dimasukkan ke kolam data AI; pembahasan lanjutan minggu depan." },
+  { meeting:"M-20260811", topic:"Rekrutmen & Posisi Kritikal", text:"Meminta rincian posisi dari unit bisnis; apabila unit tidak memberikan detail, HC menutup temuan dengan mekanisme 'new issue'." },
+  { meeting:"M-20260811", topic:"Validasi Sertifikasi & Kualitas Kandidat", text:"Follow up setiap kasus ke unit terkait (user) dan konfirmasi akar masalah sebelum menentukan tindakan training ulang atau rekrut ulang." },
+  { meeting:"M-20260811", topic:"Temuan Overdue & Evidence Upload", text:"Memperbarui target dan mengunggah evidence ke folder bersama (akses BL), serta mengirimkan update kepada pihak terkait dengan pencatatan nama penerima." },
+  { meeting:"M-20260811", topic:"Koordinasi E3S", text:"Melakukan follow up dan menjadwalkan meeting bersama E3S untuk finalisasi progres 6 poin temuan." },
+  { meeting:"M-20260811", topic:"Fatality / Pelaporan ke Kepolisian", text:"Diperlukan penentuan kebijakan tingkat manajemen terkait kewajiban pelaporan ke aparat apabila terjadi fatality; dimasukkan ke agenda workshop lanjutan." },
+];
+
+let DOCUMENTS = [];
+
+/* ===================== RENDER ===================== */
+const STATUS_OPTIONS = ["Open", "In Progress", "Overdue", "Done"];
+function statusClass(s){
+  return { "Open":"open", "In Progress":"progress", "Overdue":"overdue", "Done":"done" }[s] || "open";
+}
+function statusSelect(a){
+  const opts = STATUS_OPTIONS.map(s => `<option value="${s}" ${s===a.status?'selected':''}>${s}</option>`).join('');
+  return `<select class="status-select ${statusClass(a.status)}" data-meeting="${escapeAttr(a.meeting)}" data-item="${escapeAttr(a.item)}" onchange="changeStatus(this)">${opts}</select>`;
+}
+function escapeAttr(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+function meetingTitle(id){
+  const m = MEETINGS.find(m=>m.id===id);
+  return m ? m.title : id;
 }
 
-/**
- * PIN buat proteksi tulis (create/update). Ganti angka ini sesuka kamu —
- * ini yang bakal diminta dashboard tiap kali ada yang coba nambah/edit data.
- * Orang yang cuma mau LIAT dashboard tidak perlu PIN ini sama sekali.
- */
-const EDIT_PIN = "1234";
+function renderStats(){
+  const total = ACTIONS.length;
+  const overdue = ACTIONS.filter(a=>a.status==="Overdue").length;
+  const progress = ACTIONS.filter(a=>a.status==="In Progress").length;
+  const open = ACTIONS.filter(a=>a.status==="Open").length;
+  const done = ACTIONS.filter(a=>a.status==="Done").length;
+  document.getElementById('statRow').innerHTML = `
+    <div class="stat-pill"><div class="n">${total}</div><div class="l">Total Action Items</div></div>
+    <div class="stat-pill danger"><div class="n">${overdue}</div><div class="l">Overdue</div></div>
+    <div class="stat-pill warn"><div class="n">${progress}</div><div class="l">In Progress</div></div>
+    <div class="stat-pill"><div class="n">${open}</div><div class="l">Open</div></div>
+    <div class="stat-pill done"><div class="n">${done}</div><div class="l">Done</div></div>
+    <div class="stat-pill"><div class="n">${MEETINGS.length}</div><div class="l">Meetings Logged</div></div>
+  `;
+}
 
-function doPost(e) {
-  const body = JSON.parse(e.postData.contents);
-  if (body.pin !== EDIT_PIN) {
-    return jsonResponse({ error: "PIN salah. Data tidak disimpan." });
+let activeStatus = "all";
+function renderTracker(){
+  const q = document.getElementById('trackerSearch').value.toLowerCase();
+  const pic = document.getElementById('picFilter').value;
+  const body = document.getElementById('trackerBody');
+  const filtered = ACTIONS.filter(a=>{
+    const matchQ = !q || a.item.toLowerCase().includes(q) || a.pic.toLowerCase().includes(q) || meetingTitle(a.meeting).toLowerCase().includes(q);
+    const matchStatus = activeStatus==="all" || a.status===activeStatus;
+    const matchPic = !pic || a.pic===pic;
+    return matchQ && matchStatus && matchPic;
+  });
+  body.innerHTML = filtered.length ? filtered.map(a=>`
+    <tr>
+      <td class="item">${a.item}</td>
+      <td class="pic">${a.pic}</td>
+      <td>${a.target}</td>
+      <td><span class="meeting-tag">${a.meeting}</span></td>
+      <td>${statusSelect(a)}</td>
+    </tr>
+  `).join('') : `<tr><td colspan="5"><div class="empty"><div class="icon">📋</div>Tidak ada action item yang cocok dengan filter ini.</div></td></tr>`;
+  document.getElementById('cTracker').textContent = ACTIONS.length;
+}
+
+function renderPicFilter(){
+  const pics = [...new Set(ACTIONS.flatMap(a=>a.pic.split('/').map(p=>p.trim())))].sort();
+  const sel = document.getElementById('picFilter');
+  pics.forEach(p=>{
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p;
+    // fallback exact-match filter uses full pic string, so keep simple: use full strings instead
+  });
+  // Use full PIC strings (kept intact) for reliable filtering
+  const fullPics = [...new Set(ACTIONS.map(a=>a.pic))].sort();
+  sel.innerHTML = '<option value="">Semua PIC</option>' + fullPics.map(p=>`<option value="${p}">${p}</option>`).join('');
+}
+
+function renderDecisions(){
+  const q = document.getElementById('decisionSearch').value.toLowerCase();
+  const log = document.getElementById('decisionLog');
+  const filtered = DECISIONS.filter(d => !q || d.topic.toLowerCase().includes(q) || d.text.toLowerCase().includes(q));
+  log.innerHTML = filtered.length ? filtered.map(d=>{
+    const m = MEETINGS.find(m=>m.id===d.meeting);
+    return `
+    <div class="dcard">
+      <div class="meta">
+        <span class="topic">${d.topic}</span>
+        <span class="date">${m ? m.date : ''}</span>
+      </div>
+      <div class="text">${d.text}</div>
+      <div class="dcard-actions">
+        <button class="dcard-btn" onclick='editDecision(${JSON.stringify(d)})'>✏️ Edit</button>
+        <button class="dcard-btn danger" onclick='deleteDecisionEntry(${JSON.stringify(d)})'>🗑️ Hapus</button>
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty"><div class="icon">🗂️</div>Tidak ada keputusan yang cocok.</div>`;
+  document.getElementById('cDecisions').textContent = DECISIONS.length;
+}
+
+async function deleteDecisionEntry(d){
+  const ok = window.confirm(`Hapus keputusan "${d.topic}"?`);
+  if (!ok) return;
+  try {
+    await postToSheet({ op:'delete_decision', meeting:d.meeting, topic:d.topic, text:d.text });
+    await refetchAll();
+    renderAll();
+  } catch (err) {
+    alert('Gagal hapus: ' + err.message);
   }
+}
+
+let editingDecision = null;
+function editDecision(d){
+  editingDecision = d;
+  openModal('decision', d.meeting);
+}
+
+function renderMeetings(){
+  const q = document.getElementById('meetingSearch').value.toLowerCase();
+  const grid = document.getElementById('meetingGrid');
+  const filtered = MEETINGS.filter(m => !q || m.title.toLowerCase().includes(q) || m.agenda.toLowerCase().includes(q));
+  grid.innerHTML = filtered.length ? filtered.map(m=>{
+    const actionCount = ACTIONS.filter(a=>a.meeting===m.id).length;
+    const overdueCount = ACTIONS.filter(a=>a.meeting===m.id && a.status==="Overdue").length;
+    const decisionCount = DECISIONS.filter(d=>d.meeting===m.id).length;
+    const docs = DOCUMENTS.filter(d=>d.meeting===m.id);
+    const docsHtml = docs.length ? `<div class="doc-list">${docs.map(d=>`
+      <a class="doc-link" href="${escapeAttr(d.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+        📄 ${d.name}
+        <span class="doc-x" title="Hapus dokumen" onclick="event.preventDefault(); event.stopPropagation(); deleteDocument('${escapeAttr(m.id)}','${escapeAttr(d.url)}')">&times;</span>
+      </a>`).join('')}</div>` : '';
+    return `
+    <div class="mcard" onclick="jumpToMeeting('${m.id}')">
+      <button class="del-btn" title="Hapus meeting ini" onclick="event.stopPropagation(); deleteMeeting('${escapeAttr(m.id)}')">🗑️</button>
+      <div class="date-tag">${m.date}</div>
+      <h3>${m.title}</h3>
+      <p>${m.agenda}</p>
+      ${docsHtml}
+      <button class="doc-add-btn" onclick="event.stopPropagation(); openModal('document','${escapeAttr(m.id)}')">📎 + Dokumen</button>
+      <div class="mstats">
+        <span><b>${actionCount}</b> actions</span>
+        <span><b>${decisionCount}</b> keputusan</span>
+        <span style="color:${overdueCount ? 'var(--danger)' : 'var(--ink-soft)'}"><b>${overdueCount}</b> overdue</span>
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty"><div class="icon">🗓️</div>Tidak ada meeting yang cocok.</div>`;
+  document.getElementById('cMeetings').textContent = MEETINGS.length;
+}
+
+function jumpToMeeting(id){
+  switchTab('tracker');
+  document.getElementById('trackerSearch').value = meetingTitle(id);
+  renderTracker();
+}
+
+function switchTab(view){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.view===view));
+  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id === 'view-'+view));
+}
+
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click', ()=>switchTab(t.dataset.view)));
+document.querySelectorAll('#statusChips .chip').forEach(c=>{
+  c.addEventListener('click', ()=>{
+    document.querySelectorAll('#statusChips .chip').forEach(x=>x.classList.remove('active'));
+    c.classList.add('active');
+    activeStatus = c.dataset.status;
+    renderTracker();
+  });
+});
+document.getElementById('trackerSearch').addEventListener('input', renderTracker);
+document.getElementById('picFilter').addEventListener('change', renderTracker);
+document.getElementById('decisionSearch').addEventListener('input', renderDecisions);
+document.getElementById('meetingSearch').addEventListener('input', renderMeetings);
+
+/* ===================== WRITE OPS (POST to Sheets) ===================== */
+function fileToBase64(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]); // strip data:...;base64, prefix
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+let sessionPin = null;
+
+function getPin(){
+  if (sessionPin) return sessionPin;
+  const p = window.prompt("Masukkan PIN edit (cuma diminta sekali per sesi):");
+  if (p) sessionPin = p;
+  return sessionPin;
+}
+
+async function postToSheet(payload){
+  if (!API_URL) throw new Error("API_URL belum di-set, jalan di mode demo.");
+  const pin = getPin();
+  if (!pin) throw new Error("PIN dibutuhkan untuk menyimpan perubahan.");
+  // text/plain content-type keeps this a CORS "simple request" so Apps Script
+  // doesn't need to handle a preflight OPTIONS call.
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ ...payload, pin }),
+  });
+  const data = await res.json();
+  if (data.error) {
+    if (data.error.includes("PIN")) sessionPin = null; // wrong pin, ask again next time
+    throw new Error(data.error);
+  }
+  return data;
+}
+
+async function changeStatus(selectEl){
+  const meeting = selectEl.dataset.meeting;
+  const item = selectEl.dataset.item;
+  const newStatus = selectEl.value;
+  selectEl.disabled = true;
+  const prevClass = selectEl.className;
+  try {
+    await postToSheet({ type:"action", op:"update_status", meeting, item, newStatus });
+    const a = ACTIONS.find(x => x.meeting===meeting && x.item===item);
+    if (a) a.status = newStatus;
+    selectEl.className = `status-select ${statusClass(newStatus)}`;
+    renderStats();
+  } catch (err) {
+    alert("Gagal update status: " + err.message);
+    selectEl.className = prevClass;
+  } finally {
+    selectEl.disabled = false;
+  }
+}
+
+async function deleteMeeting(id){
+  const m = MEETINGS.find(x=>x.id===id);
+  const actionCount = ACTIONS.filter(a=>a.meeting===id).length;
+  const decisionCount = DECISIONS.filter(d=>d.meeting===id).length;
+  const ok = window.confirm(
+    `Hapus meeting "${m ? m.title : id}"?\n\nIni juga bakal hapus ${actionCount} action item dan ${decisionCount} keputusan yang nempel di meeting ini. Tidak bisa dibatalkan.`
+  );
+  if (!ok) return;
+  try {
+    await postToSheet({ op:'delete_meeting', meeting:id });
+    await refetchAll();
+    renderAll();
+  } catch (err) {
+    alert('Gagal hapus: ' + err.message + ' — coba refresh dashboard dulu buat cek kondisi terkininya di Sheets.');
+  }
+}
+
+async function deleteDocument(meeting, url){
+  const ok = window.confirm('Hapus dokumen ini dari meeting?');
+  if (!ok) return;
+  try {
+    await postToSheet({ op:'delete_document', meeting, url });
+    await refetchAll();
+    renderAll();
+  } catch (err) {
+    alert('Gagal hapus dokumen: ' + err.message);
+  }
+}
+
+/* ===================== MODAL ===================== */
+let modalType = null;
+
+function meetingOptionsHtml(){
+  return MEETINGS.map(m => `<option value="${escapeAttr(m.id)}">${m.id} — ${m.title}</option>`).join('');
+}
+
+function openModal(type, presetMeeting){
+  modalType = type;
+  document.getElementById('modalMsg').textContent = '';
+  const title = document.getElementById('modalTitle');
+  const body = document.getElementById('modalBody');
+
+  if (type === 'action') {
+    title.textContent = 'Tambah Action Item';
+    body.innerHTML = `
+      <div class="field"><label>Meeting</label>
+        <select id="f_meeting">${meetingOptionsHtml()}</select></div>
+      <div class="field"><label>Tindak Lanjut</label>
+        <textarea id="f_item" placeholder="Deskripsi action item…"></textarea></div>
+      <div class="field"><label>PIC</label>
+        <input id="f_pic" type="text" placeholder="Nama / tim penanggung jawab"></div>
+      <div class="field"><label>Target Waktu</label>
+        <input id="f_target" type="date"></div>
+      <div class="field"><label>Status</label>
+        <select id="f_status">${STATUS_OPTIONS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
+    `;
+  }
+
+  if (type === 'decision') {
+    title.textContent = editingDecision ? 'Edit Keputusan' : 'Tambah Keputusan';
+    body.innerHTML = `
+      <div class="field"><label>Meeting</label>
+        <select id="f_meeting">${meetingOptionsHtml()}</select></div>
+      <div class="field"><label>Topik</label>
+        <input id="f_topic" type="text" placeholder="mis. Perubahan Organisasi / PMOC" value="${editingDecision ? escapeAttr(editingDecision.topic) : ''}"></div>
+      <div class="field"><label>Keputusan</label>
+        <textarea id="f_text" placeholder="Isi keputusan…">${editingDecision ? editingDecision.text : ''}</textarea></div>
+    `;
+  }
+
+  if (type === 'document') {
+    title.textContent = 'Tambah Dokumen';
+    body.innerHTML = `
+      <div class="field"><label>Meeting</label>
+        <select id="f_meeting">${meetingOptionsHtml()}</select></div>
+      <div class="field"><label>Upload File (Word, Excel, PDF, dll — maks 10MB)</label>
+        <input id="f_docfile" type="file"></div>
+      <div class="field"><label>Nama Dokumen (opsional, default nama file)</label>
+        <input id="f_docname" type="text" placeholder="mis. MoM 11 Agustus 2026"></div>
+      <div style="text-align:center; font-size:11px; color:var(--ink-soft); margin:2px 0;">— atau —</div>
+      <div class="field"><label>Paste Link (kalau file sudah ada di Drive/tempat lain)</label>
+        <input id="f_docurl" type="text" placeholder="https://drive.google.com/…"></div>
+    `;
+  }
+
+  if (type === 'meeting') {
+    title.textContent = 'Tambah Meeting Baru';
+    const today = new Date().toISOString().slice(0,10);
+    body.innerHTML = `
+      <div class="field"><label>ID Meeting</label>
+        <input id="f_id" type="text" placeholder="mis. M-${today.replace(/-/g,'')}" value="M-${today.replace(/-/g,'')}"></div>
+      <div class="field"><label>Tanggal</label>
+        <input id="f_date" type="date" value="${today}"></div>
+      <div class="field"><label>Judul</label>
+        <input id="f_title" type="text" placeholder="Judul/topik meeting"></div>
+      <div class="field"><label>Agenda</label>
+        <textarea id="f_agenda" placeholder="Ringkasan agenda…"></textarea></div>
+      <div class="field"><label>Notulis</label>
+        <input id="f_notulis" type="text" placeholder="Nama notulis" value="Adhikya Triputra Muluk"></div>
+    `;
+  }
+
+  if (!MEETINGS.length && (type === 'action' || type === 'decision' || type === 'document')) {
+    document.getElementById('modalMsg').textContent = 'Belum ada meeting — tambah meeting dulu sebelum action/keputusan/dokumen.';
+    document.getElementById('modalMsg').className = 'form-msg error';
+  }
+
+  if (presetMeeting) {
+    const sel = document.getElementById('f_meeting');
+    if (sel) sel.value = presetMeeting;
+  }
+
+  document.getElementById('modalOverlay').classList.add('active');
+}
+
+function closeModal(){
+  document.getElementById('modalOverlay').classList.remove('active');
+  modalType = null;
+  editingDecision = null;
+}
+
+async function submitModal(){
+  const msg = document.getElementById('modalMsg');
+  const btn = document.getElementById('modalSubmit');
+  msg.textContent = '';
+  msg.className = 'form-msg';
 
   try {
-    const ss = SpreadsheetApp.openById(getSheetId_());
+    if (modalType === 'action') {
+      const meeting = document.getElementById('f_meeting').value;
+      const item = document.getElementById('f_item').value.trim();
+      const pic = document.getElementById('f_pic').value.trim();
+      const target = document.getElementById('f_target').value.trim();
+      const status = document.getElementById('f_status').value;
+      if (!meeting || !item || !pic) { msg.textContent = 'Meeting, tindak lanjut, dan PIC wajib diisi.'; msg.className = 'form-msg error'; return; }
+      btn.disabled = true; btn.textContent = 'Menyimpan…';
+      await postToSheet({ type:'action', op:'create', data:{ meeting, item, pic, target, status } });
+    }
 
-    // Easiest path for a brand-new MoM: one call, pushes the whole meeting at once.
-    // body = { op: "sync_meeting", meeting: {...}, actions: [...], decisions: [...] }
-    if (body.op === "sync_meeting") {
-      const meetings = ss.getSheetByName("Meetings");
-      const actions = ss.getSheetByName("Actions");
-      const decisions = ss.getSheetByName("Decisions");
-
-      if (rowExists_(meetings, "id", body.meeting.id)) {
-        return jsonResponse({ error: "Meeting ID '" + body.meeting.id + "' sudah ada di Sheets. Data tidak disimpan ulang (kemungkinan percobaan sebelumnya sudah berhasil)." });
+    if (modalType === 'decision') {
+      const meeting = document.getElementById('f_meeting').value;
+      const topic = document.getElementById('f_topic').value.trim();
+      const text = document.getElementById('f_text').value.trim();
+      if (!meeting || !topic || !text) { msg.textContent = 'Semua field wajib diisi.'; msg.className = 'form-msg error'; return; }
+      btn.disabled = true; btn.textContent = 'Menyimpan…';
+      if (editingDecision) {
+        await postToSheet({ op:'update_decision', meeting: editingDecision.meeting, oldTopic: editingDecision.topic, oldText: editingDecision.text, newTopic: topic, newText: text });
+        editingDecision = null;
+      } else {
+        await postToSheet({ type:'decision', op:'create', data:{ meeting, topic, text } });
       }
-
-      meetings.appendRow([body.meeting.id, body.meeting.date, body.meeting.title, body.meeting.agenda, body.meeting.notulis]);
-      (body.actions || []).forEach(a => actions.appendRow([body.meeting.id, a.item, a.pic, a.target, a.status || "Open"]));
-      (body.decisions || []).forEach(d => decisions.appendRow([body.meeting.id, d.topic, d.text]));
-
-      return jsonResponse({ ok: true, meeting: body.meeting.id });
     }
 
-    if (body.op === "delete_meeting") {
-      deleteRowsMatching(ss.getSheetByName("Meetings"), "id", body.meeting);
-      deleteRowsMatching(ss.getSheetByName("Actions"), "meeting", body.meeting);
-      deleteRowsMatching(ss.getSheetByName("Decisions"), "meeting", body.meeting);
-      deleteRowsMatching(ensureDocumentsSheet_(ss), "meeting", body.meeting);
-      return jsonResponse({ ok: true });
-    }
+    if (modalType === 'document') {
+      const meeting = document.getElementById('f_meeting').value;
+      const fileInput = document.getElementById('f_docfile');
+      const file = fileInput.files[0];
+      const urlInput = document.getElementById('f_docurl').value.trim();
+      const nameInput = document.getElementById('f_docname').value.trim();
 
-    if (body.op === "update_decision") {
-      const sheet = ss.getSheetByName("Decisions");
-      const data = sheet.getDataRange().getValues();
-      const headers = data[0];
-      const meetingCol = headers.indexOf("meeting");
-      const topicCol = headers.indexOf("topic");
-      const textCol = headers.indexOf("text");
-      for (let i = 1; i < data.length; i++) {
-        if (data[i][meetingCol] === body.meeting && data[i][topicCol] === body.oldTopic && data[i][textCol] === body.oldText) {
-          sheet.getRange(i + 1, topicCol + 1).setValue(body.newTopic);
-          sheet.getRange(i + 1, textCol + 1).setValue(body.newText);
-          return jsonResponse({ ok: true });
-        }
+      if (!meeting) { msg.textContent = 'Pilih meeting dulu.'; msg.className = 'form-msg error'; return; }
+      if (!file && !urlInput) { msg.textContent = 'Upload file atau paste link — pilih salah satu.'; msg.className = 'form-msg error'; return; }
+
+      if (file) {
+        if (file.size > 10 * 1024 * 1024) { msg.textContent = 'File terlalu besar (maks 10MB).'; msg.className = 'form-msg error'; return; }
+        btn.disabled = true; btn.textContent = 'Mengupload…';
+        const base64 = await fileToBase64(file);
+        const name = nameInput || file.name;
+        await postToSheet({ op:'upload_document', meeting, data:{ name, filename:file.name, mimeType:file.type, base64 } });
+      } else {
+        if (!/^https?:\/\//i.test(urlInput)) { msg.textContent = 'Link harus diawali http:// atau https://'; msg.className = 'form-msg error'; return; }
+        const name = nameInput || urlInput;
+        btn.disabled = true; btn.textContent = 'Menyimpan…';
+        await postToSheet({ type:'document', op:'create', data:{ meeting, name, url: urlInput } });
       }
-      return jsonResponse({ error: "Keputusan asli tidak ditemukan (mungkin sudah diubah/dihapus)." });
     }
 
-    if (body.op === "delete_decision") {
-      const sheet = ss.getSheetByName("Decisions");
-      const data = sheet.getDataRange().getValues();
-      const headers = data[0];
-      const meetingCol = headers.indexOf("meeting");
-      const topicCol = headers.indexOf("topic");
-      const textCol = headers.indexOf("text");
-      for (let i = data.length - 1; i >= 1; i--) {
-        if (data[i][meetingCol] === body.meeting && data[i][topicCol] === body.topic && data[i][textCol] === body.text) {
-          sheet.deleteRow(i + 1);
-          return jsonResponse({ ok: true });
-        }
-      }
-      return jsonResponse({ ok: true, note: "Already deleted" });
+    if (modalType === 'meeting') {
+      const id = document.getElementById('f_id').value.trim();
+      const date = document.getElementById('f_date').value;
+      const title = document.getElementById('f_title').value.trim();
+      const agenda = document.getElementById('f_agenda').value.trim();
+      const notulis = document.getElementById('f_notulis').value.trim();
+      if (!id || !date || !title) { msg.textContent = 'ID, tanggal, dan judul wajib diisi.'; msg.className = 'form-msg error'; return; }
+      if (MEETINGS.some(m=>m.id===id)) { msg.textContent = 'ID meeting itu sudah dipakai, ganti ID-nya.'; msg.className = 'form-msg error'; return; }
+      btn.disabled = true; btn.textContent = 'Menyimpan…';
+      await postToSheet({ type:'meeting', op:'create', data:{ id, date, title, agenda, notulis } });
     }
 
-    if (body.op === "delete_document") {
-      const sheet = ensureDocumentsSheet_(ss);
-      const data = sheet.getDataRange().getValues();
-      const headers = data[0];
-      const meetingCol = headers.indexOf("meeting");
-      const urlCol = headers.indexOf("url");
-      for (let i = data.length - 1; i >= 1; i--) {
-        if (data[i][meetingCol] === body.meeting && data[i][urlCol] === body.url) {
-          sheet.deleteRow(i + 1);
-          return jsonResponse({ ok: true });
-        }
-      }
-      // Already gone (e.g. a retried delete) — treat as success, not an error.
-      return jsonResponse({ ok: true, note: "Already deleted" });
-    }
-
-    if (body.op === "upload_document") {
-      const folder = ensureDocsFolder_();
-      const bytes = Utilities.base64Decode(body.data.base64);
-      const blob = Utilities.newBlob(bytes, body.data.mimeType || "application/octet-stream", body.data.filename);
-      const file = folder.createFile(blob);
-      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      const url = file.getUrl();
-      ensureDocumentsSheet_(ss).appendRow([body.meeting, body.data.name || body.data.filename, url]);
-      return jsonResponse({ ok: true, url });
-    }
-
-    // body.type: "meeting" | "action" | "decision" | "document"
-    // body.op:   "create" | "update_status"
-    const sheetName = { meeting: "Meetings", action: "Actions", decision: "Decisions", document: "Documents" }[body.type];
-    if (!sheetName) return jsonResponse({ error: "Unknown type" });
-    const sheet = sheetName === "Documents" ? ensureDocumentsSheet_(ss) : ss.getSheetByName(sheetName);
-
-    if (body.op === "create") {
-      if (body.type === "meeting" && rowExists_(sheet, "id", body.data.id)) {
-        return jsonResponse({ error: "Meeting ID '" + body.data.id + "' sudah ada. Data tidak disimpan ulang (kemungkinan percobaan sebelumnya sudah berhasil) — coba refresh dashboard." });
-      }
-      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-      const row = headers.map(h => body.data[h] || "");
-      sheet.appendRow(row);
-      return jsonResponse({ ok: true });
-    }
-
-    if (body.op === "update_status" && body.type === "action") {
-      const data = sheet.getDataRange().getValues();
-      const headers = data[0];
-      const itemCol = headers.indexOf("item");
-      const meetingCol = headers.indexOf("meeting");
-      const statusCol = headers.indexOf("status");
-      for (let i = 1; i < data.length; i++) {
-        if (data[i][itemCol] === body.item && data[i][meetingCol] === body.meeting) {
-          sheet.getRange(i + 1, statusCol + 1).setValue(body.newStatus);
-          return jsonResponse({ ok: true });
-        }
-      }
-      return jsonResponse({ error: "Action item not found" });
-    }
-
-    return jsonResponse({ error: "Unknown operation" });
+    btn.textContent = 'Menyegarkan data…';
+    await refetchAll();
+    closeModal();
+    renderAll();
   } catch (err) {
-    return jsonResponse({ error: "Server error: " + err.message });
+    msg.textContent = 'Gagal simpan: ' + err.message + ' — cek dulu di Sheets sebelum coba lagi, siapa tau sebenarnya sudah kesimpan.';
+    msg.className = 'form-msg error';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Simpan';
   }
 }
 
-/* ---------- helpers ---------- */
+function renderAll(){
+  renderStats();
+  renderPicFilter();
+  renderTracker();
+  renderDecisions();
+  renderMeetings();
+}
 
-function rowExists_(sheet, columnName, value) {
-  if (!sheet) return false;
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const colIdx = headers.indexOf(columnName);
-  if (colIdx === -1) return false;
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][colIdx] === value) return true;
+function setSyncStatus(text, isLive){
+  const el = document.getElementById('syncStatus');
+  el.innerHTML = `<span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:${isLive ? '#7FD99A' : '#FBBF24'}; margin-right:6px;"></span>${text}`;
+}
+
+async function refetchAll(){
+  if (!API_URL) return false;
+  const res = await fetch(API_URL + "?action=all");
+  const data = await res.json();
+  MEETINGS = data.meetings || [];
+  ACTIONS = data.actions || [];
+  DECISIONS = data.decisions || [];
+  DOCUMENTS = data.documents || [];
+  return true;
+}
+
+async function init(){
+  if (!API_URL) {
+    setSyncStatus("Mode demo — data contoh (belum tersambung ke Google Sheets)", false);
+    renderAll();
+    return;
   }
-  return false;
-}
-
-function sheetToObjects(sheet) {
-  if (!sheet) return [];
-  const data = sheet.getDataRange().getValues();
-  const headers = data.shift();
-  return data
-    .filter(row => row.some(cell => cell !== ""))
-    .map(row => {
-      const obj = {};
-      headers.forEach((h, i) => (obj[h] = formatCellValue_(row[i])));
-      return obj;
-    });
-}
-
-/**
- * Sheets auto-converts things that look like dates (including free-text
- * "2026-08-20" typed into a "target" cell) into its own Date type. Read back
- * via the API, that becomes a full ISO timestamp like
- * "2026-08-12T17:00:00.000Z" instead of a clean date. This flattens any
- * Date-typed cell back to a plain yyyy-MM-dd string.
- */
-function formatCellValue_(value) {
-  if (Object.prototype.toString.call(value) === "[object Date]") {
-    return Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  setSyncStatus("Menyambungkan ke Google Sheets…", false);
+  try {
+    await refetchAll();
+    setSyncStatus("Tersambung ke Google Sheets — data live", true);
+  } catch (err) {
+    setSyncStatus("Gagal konek ke Sheets, menampilkan data contoh sebagai fallback", false);
   }
-  return value;
+  renderAll();
 }
 
-function jsonResponse(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(
-    ContentService.MimeType.JSON
-  );
-}
-
-function deleteRowsMatching(sheet, columnName, value) {
-  if (!sheet) return;
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const colIdx = headers.indexOf(columnName);
-  if (colIdx === -1) return;
-  // delete bottom-up so row indexes don't shift while looping
-  for (let i = data.length - 1; i >= 1; i--) {
-    if (data[i][colIdx] === value) sheet.deleteRow(i + 1);
-  }
-}
-
-/**
- * Optional: auto-flag overdue action items daily.
- * Set a time-driven trigger (Triggers > Add Trigger > Time-driven > Day timer)
- * pointing to this function if you add a "due_date" column later and want
- * status to flip to "Overdue" automatically instead of manually.
- */
-function flagOverdueItems() {
-  // Placeholder — wire up once "target" column is normalized to real dates
-  // instead of free-text like "Segera" / "Minggu depan".
-}
+init();
+</script>
+</body>
+</html>
