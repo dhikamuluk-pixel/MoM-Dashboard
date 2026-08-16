@@ -163,7 +163,7 @@
   .dcard .meta{
     display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
   }
-  .dcard .topic{ font-weight:700; color:var(--navy); font-size:13.5px; }
+  .dcard .topic{ font-weight:700; color:var(--navy); font-size:13.5px; display:flex; align-items:center; }
   .dcard .date{ font-size:11.5px; color:var(--ink-soft); }
   .dcard .text{ font-size:13.5px; line-height:1.55; color:var(--ink); }
   .dcard-actions{ display:flex; gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid var(--line); }
@@ -279,6 +279,57 @@
   .form-msg.error{ color:var(--danger); }
   .form-msg.ok{ color:var(--ok); }
 
+  /* Numbering */
+  .row-num{ color:var(--ink-soft); font-weight:700; font-size:12px; width:32px; }
+  .dnum{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:20px; height:20px; border-radius:50%; background:var(--navy); color:#fff;
+    font-size:10.5px; font-weight:700; margin-right:8px; flex-shrink:0;
+  }
+  .mnum{
+    position:absolute; top:14px; left:16px;
+    background:var(--navy); color:#fff; font-size:10.5px; font-weight:700;
+    width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  }
+
+  /* Meeting detail panel */
+  .detail-modal{ max-width:780px; }
+  .detail-meta{
+    background:var(--paper); border-radius:10px; padding:14px 16px; margin-bottom:20px;
+    display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; font-size:12.5px;
+  }
+  .detail-meta .full{ grid-column:1 / -1; }
+  .detail-meta b{ color:var(--ink-soft); font-weight:700; display:block; font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; margin-bottom:2px; }
+  .detail-section{ margin-bottom:24px; }
+  .detail-section-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .detail-section-head h4{ font-size:13px; font-weight:700; color:var(--navy); }
+  .btn-mini{
+    background:var(--gold); color:#fff; border:none; border-radius:7px;
+    padding:5px 10px; font-size:11px; font-weight:700; cursor:pointer;
+  }
+  .btn-mini:hover{ background:#16A34A; }
+  .btn-mini-outline{
+    background:none; border:1px solid var(--line); color:var(--ink-soft);
+    border-radius:7px; padding:5px 10px; font-size:11px; font-weight:600; cursor:pointer;
+  }
+  .btn-mini-outline:hover{ background:var(--paper); }
+  .mini-list{ display:flex; flex-direction:column; gap:8px; }
+  .mini-row{
+    display:flex; justify-content:space-between; align-items:flex-start; gap:10px;
+    background:var(--paper); border-radius:8px; padding:10px 12px; font-size:12.5px;
+  }
+  .mini-row .mr-text{ flex:1; line-height:1.4; }
+  .mini-row .mr-actions{ display:flex; gap:6px; flex-shrink:0; }
+  .mini-row .mr-actions button{
+    background:none; border:none; cursor:pointer; font-size:12px; padding:2px 4px; opacity:.65;
+  }
+  .mini-row .mr-actions button:hover{ opacity:1; }
+  .history-list{ display:flex; flex-direction:column; gap:8px; max-height:220px; overflow-y:auto; }
+  .history-item{ font-size:12px; color:var(--ink-soft); padding:8px 10px; border-left:2px solid var(--gold-soft); background:var(--paper); border-radius:0 6px 6px 0; }
+  .history-item b{ color:var(--ink); }
+  .history-item .htime{ float:right; color:var(--ink-soft); font-size:10.5px; }
+  .empty-mini{ font-size:12px; color:var(--ink-soft); text-align:center; padding:16px; }
+
 
   @media (max-width:720px){
     .masthead, .tabbar, main{ padding-left:18px; padding-right:18px; }
@@ -322,7 +373,7 @@
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th style="width:38%">Tindak Lanjut</th><th>PIC</th><th>Target</th><th>Meeting</th><th>Status</th></tr>
+          <tr><th style="width:32px">#</th><th style="width:36%">Tindak Lanjut</th><th>PIC</th><th>Target</th><th>Meeting</th><th>Status</th></tr>
         </thead>
         <tbody id="trackerBody"></tbody>
       </table>
@@ -342,7 +393,7 @@
   <section class="view" id="view-meetings">
     <div class="toolbar">
       <input type="text" id="meetingSearch" placeholder="Cari meeting berdasarkan judul atau agenda…">
-      <button class="btn-add" onclick="openModal('meeting')">🔒 + Tambah Meeting</button>
+      <button class="btn-add" onclick="editingMeeting=null; openModal('meeting')">🔒 + Tambah Meeting</button>
     </div>
     <div class="mgrid" id="meetingGrid"></div>
   </section>
@@ -362,6 +413,17 @@
       <button class="btn-secondary" onclick="closeModal()">Batal</button>
       <button class="btn-primary" id="modalSubmit" onclick="submitModal()">Simpan</button>
     </div>
+  </div>
+</div>
+
+<!-- MEETING DETAIL PANEL -->
+<div class="modal-overlay" id="detailOverlay">
+  <div class="modal detail-modal">
+    <div class="modal-head">
+      <h3 id="detailTitle">Detail Meeting</h3>
+      <span class="x" onclick="closeDetail()">&times;</span>
+    </div>
+    <div class="modal-body" id="detailBody" style="max-height:72vh; overflow-y:auto;"></div>
   </div>
 </div>
 
@@ -414,6 +476,7 @@ let DECISIONS = [
 ];
 
 let DOCUMENTS = [];
+let HISTORY = [];
 
 /* ===================== RENDER ===================== */
 const STATUS_OPTIONS = ["Open", "In Progress", "Overdue", "Done"];
@@ -457,15 +520,16 @@ function renderTracker(){
     const matchPic = !pic || a.pic===pic;
     return matchQ && matchStatus && matchPic;
   });
-  body.innerHTML = filtered.length ? filtered.map(a=>`
+  body.innerHTML = filtered.length ? filtered.map((a,idx)=>`
     <tr>
+      <td class="row-num">${idx+1}</td>
       <td class="item">${a.item}</td>
       <td class="pic">${a.pic}</td>
       <td>${a.target}</td>
       <td><span class="meeting-tag">${a.meeting}</span></td>
       <td>${statusSelect(a)}</td>
     </tr>
-  `).join('') : `<tr><td colspan="5"><div class="empty"><div class="icon">📋</div>Tidak ada action item yang cocok dengan filter ini.</div></td></tr>`;
+  `).join('') : `<tr><td colspan="6"><div class="empty"><div class="icon">📋</div>Tidak ada action item yang cocok dengan filter ini.</div></td></tr>`;
   document.getElementById('cTracker').textContent = ACTIONS.length;
 }
 
@@ -486,12 +550,12 @@ function renderDecisions(){
   const q = document.getElementById('decisionSearch').value.toLowerCase();
   const log = document.getElementById('decisionLog');
   const filtered = DECISIONS.filter(d => !q || d.topic.toLowerCase().includes(q) || d.text.toLowerCase().includes(q));
-  log.innerHTML = filtered.length ? filtered.map(d=>{
+  log.innerHTML = filtered.length ? filtered.map((d,idx)=>{
     const m = MEETINGS.find(m=>m.id===d.meeting);
     return `
     <div class="dcard">
       <div class="meta">
-        <span class="topic">${d.topic}</span>
+        <span class="topic"><span class="dnum">${idx+1}</span>${d.topic}</span>
         <span class="date">${m ? m.date : ''}</span>
       </div>
       <div class="text">${d.text}</div>
@@ -526,7 +590,7 @@ function renderMeetings(){
   const q = document.getElementById('meetingSearch').value.toLowerCase();
   const grid = document.getElementById('meetingGrid');
   const filtered = MEETINGS.filter(m => !q || m.title.toLowerCase().includes(q) || m.agenda.toLowerCase().includes(q));
-  grid.innerHTML = filtered.length ? filtered.map(m=>{
+  grid.innerHTML = filtered.length ? filtered.map((m,idx)=>{
     const actionCount = ACTIONS.filter(a=>a.meeting===m.id).length;
     const overdueCount = ACTIONS.filter(a=>a.meeting===m.id && a.status==="Overdue").length;
     const decisionCount = DECISIONS.filter(d=>d.meeting===m.id).length;
@@ -537,9 +601,10 @@ function renderMeetings(){
         <span class="doc-x" title="Hapus dokumen" onclick="event.preventDefault(); event.stopPropagation(); deleteDocument('${escapeAttr(m.id)}','${escapeAttr(d.url)}')">&times;</span>
       </a>`).join('')}</div>` : '';
     return `
-    <div class="mcard" onclick="jumpToMeeting('${m.id}')">
+    <div class="mcard" onclick="openMeetingDetail('${escapeAttr(m.id)}')">
+      <span class="mnum">${idx+1}</span>
       <button class="del-btn" title="Hapus meeting ini" onclick="event.stopPropagation(); deleteMeeting('${escapeAttr(m.id)}')">🗑️</button>
-      <div class="date-tag">${m.date}</div>
+      <div class="date-tag" style="margin-left:26px;">${m.date}</div>
       <h3>${m.title}</h3>
       <p>${m.agenda}</p>
       ${docsHtml}
@@ -554,10 +619,96 @@ function renderMeetings(){
   document.getElementById('cMeetings').textContent = MEETINGS.length;
 }
 
-function jumpToMeeting(id){
-  switchTab('tracker');
-  document.getElementById('trackerSearch').value = meetingTitle(id);
-  renderTracker();
+/* ===================== MEETING DETAIL PANEL ===================== */
+function openMeetingDetail(id){
+  const m = MEETINGS.find(x=>x.id===id);
+  if (!m) return;
+  const actions = ACTIONS.filter(a=>a.meeting===id);
+  const decisions = DECISIONS.filter(d=>d.meeting===id);
+  const docs = DOCUMENTS.filter(d=>d.meeting===id);
+  const history = HISTORY.filter(h=>h.meeting===id).slice().reverse();
+
+  document.getElementById('detailTitle').textContent = m.title;
+  document.getElementById('detailBody').innerHTML = `
+    <div class="detail-meta">
+      <div><b>Tanggal</b>${m.date}</div>
+      <div><b>Notulis</b>${m.notulis || '-'}</div>
+      <div class="full"><b>Agenda</b>${m.agenda || '-'}</div>
+      <div class="full" style="margin-top:4px;">
+        <button class="btn-mini-outline" onclick="editMeetingInfo('${escapeAttr(id)}')">✏️ Edit Info Meeting</button>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-head">
+        <h4>Action Items (${actions.length})</h4>
+        <button class="btn-mini" onclick="closeDetail(); openModal('action','${escapeAttr(id)}')">+ Tambah</button>
+      </div>
+      <div class="mini-list">
+        ${actions.length ? actions.map((a,i)=>`
+          <div class="mini-row">
+            <span class="dnum" style="margin-top:2px;">${i+1}</span>
+            <div class="mr-text"><b>${a.item}</b><br><span style="color:var(--ink-soft)">${a.pic} · ${a.target}</span></div>
+            ${statusSelect(a)}
+          </div>`).join('') : `<div class="empty-mini">Belum ada action item.</div>`}
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-head">
+        <h4>Keputusan (${decisions.length})</h4>
+        <button class="btn-mini" onclick="closeDetail(); editingDecision=null; openModal('decision','${escapeAttr(id)}')">+ Tambah</button>
+      </div>
+      <div class="mini-list">
+        ${decisions.length ? decisions.map((d,i)=>`
+          <div class="mini-row">
+            <span class="dnum" style="margin-top:2px;">${i+1}</span>
+            <div class="mr-text"><b>${d.topic}</b><br><span style="color:var(--ink-soft)">${d.text}</span></div>
+            <div class="mr-actions">
+              <button title="Edit" onclick='closeDetail(); editDecision(${JSON.stringify(d)})'>✏️</button>
+              <button title="Hapus" onclick='deleteDecisionEntry(${JSON.stringify(d)})'>🗑️</button>
+            </div>
+          </div>`).join('') : `<div class="empty-mini">Belum ada keputusan.</div>`}
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-head">
+        <h4>Dokumen (${docs.length})</h4>
+        <button class="btn-mini" onclick="closeDetail(); openModal('document','${escapeAttr(id)}')">📎 + Tambah</button>
+      </div>
+      <div class="mini-list">
+        ${docs.length ? docs.map(d=>`
+          <div class="mini-row">
+            <a class="mr-text" href="${escapeAttr(d.url)}" target="_blank" rel="noopener" style="color:var(--navy); text-decoration:none;">📄 ${d.name}</a>
+            <div class="mr-actions">
+              <button title="Hapus" onclick="deleteDocument('${escapeAttr(id)}','${escapeAttr(d.url)}')">🗑️</button>
+            </div>
+          </div>`).join('') : `<div class="empty-mini">Belum ada dokumen.</div>`}
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-head"><h4>Riwayat Perubahan</h4></div>
+      <div class="history-list">
+        ${history.length ? history.map(h=>`
+          <div class="history-item"><span class="htime">${h.timestamp}</span><b>${h.name}</b> — ${h.action}${h.note ? ' <i>(' + h.note + ')</i>' : ''}</div>
+        `).join('') : `<div class="empty-mini">Belum ada riwayat.</div>`}
+      </div>
+    </div>
+  `;
+  document.getElementById('detailOverlay').classList.add('active');
+}
+
+function closeDetail(){
+  document.getElementById('detailOverlay').classList.remove('active');
+}
+
+let editingMeeting = null;
+function editMeetingInfo(id){
+  editingMeeting = MEETINGS.find(x=>x.id===id);
+  closeDetail();
+  openModal('meeting');
 }
 
 function switchTab(view){
@@ -590,6 +741,7 @@ function fileToBase64(file){
 }
 
 let sessionPin = null;
+let sessionName = null;
 
 function getPin(){
   if (sessionPin) return sessionPin;
@@ -598,16 +750,24 @@ function getPin(){
   return sessionPin;
 }
 
+function getUserName(){
+  if (sessionName) return sessionName;
+  const n = window.prompt("Nama kamu (buat riwayat perubahan, cuma diminta sekali per sesi):");
+  if (n) sessionName = n;
+  return sessionName || "Tidak diketahui";
+}
+
 async function postToSheet(payload){
   if (!API_URL) throw new Error("API_URL belum di-set, jalan di mode demo.");
   const pin = getPin();
   if (!pin) throw new Error("PIN dibutuhkan untuk menyimpan perubahan.");
+  const name = getUserName();
   // text/plain content-type keeps this a CORS "simple request" so Apps Script
   // doesn't need to handle a preflight OPTIONS call.
   const res = await fetch(API_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ ...payload, pin }),
+    body: JSON.stringify({ ...payload, pin, name }),
   });
   const data = await res.json();
   if (data.error) {
@@ -723,19 +883,20 @@ function openModal(type, presetMeeting){
   }
 
   if (type === 'meeting') {
-    title.textContent = 'Tambah Meeting Baru';
+    title.textContent = editingMeeting ? 'Edit Info Meeting' : 'Tambah Meeting Baru';
     const today = new Date().toISOString().slice(0,10);
+    const em = editingMeeting;
     body.innerHTML = `
       <div class="field"><label>ID Meeting</label>
-        <input id="f_id" type="text" placeholder="mis. M-${today.replace(/-/g,'')}" value="M-${today.replace(/-/g,'')}"></div>
+        <input id="f_id" type="text" value="${em ? escapeAttr(em.id) : 'M-'+today.replace(/-/g,'')}" ${em ? 'disabled' : ''}></div>
       <div class="field"><label>Tanggal</label>
-        <input id="f_date" type="date" value="${today}"></div>
+        <input id="f_date" type="date" value="${em ? em.date : today}"></div>
       <div class="field"><label>Judul</label>
-        <input id="f_title" type="text" placeholder="Judul/topik meeting"></div>
+        <input id="f_title" type="text" placeholder="Judul/topik meeting" value="${em ? escapeAttr(em.title) : ''}"></div>
       <div class="field"><label>Agenda</label>
-        <textarea id="f_agenda" placeholder="Ringkasan agenda…"></textarea></div>
+        <textarea id="f_agenda" placeholder="Ringkasan agenda…">${em ? em.agenda : ''}</textarea></div>
       <div class="field"><label>Notulis</label>
-        <input id="f_notulis" type="text" placeholder="Nama notulis" value="Adhikya Triputra Muluk"></div>
+        <input id="f_notulis" type="text" placeholder="Nama notulis" value="${em ? escapeAttr(em.notulis) : 'Adhikya Triputra Muluk'}"></div>
     `;
   }
 
@@ -756,6 +917,7 @@ function closeModal(){
   document.getElementById('modalOverlay').classList.remove('active');
   modalType = null;
   editingDecision = null;
+  editingMeeting = null;
 }
 
 async function submitModal(){
@@ -821,9 +983,14 @@ async function submitModal(){
       const agenda = document.getElementById('f_agenda').value.trim();
       const notulis = document.getElementById('f_notulis').value.trim();
       if (!id || !date || !title) { msg.textContent = 'ID, tanggal, dan judul wajib diisi.'; msg.className = 'form-msg error'; return; }
-      if (MEETINGS.some(m=>m.id===id)) { msg.textContent = 'ID meeting itu sudah dipakai, ganti ID-nya.'; msg.className = 'form-msg error'; return; }
       btn.disabled = true; btn.textContent = 'Menyimpan…';
-      await postToSheet({ type:'meeting', op:'create', data:{ id, date, title, agenda, notulis } });
+      if (editingMeeting) {
+        await postToSheet({ op:'update_meeting', meeting: id, data:{ date, title, agenda, notulis } });
+        editingMeeting = null;
+      } else {
+        if (MEETINGS.some(m=>m.id===id)) { msg.textContent = 'ID meeting itu sudah dipakai, ganti ID-nya.'; msg.className = 'form-msg error'; btn.disabled = false; btn.textContent = 'Simpan'; return; }
+        await postToSheet({ type:'meeting', op:'create', data:{ id, date, title, agenda, notulis } });
+      }
     }
 
     btn.textContent = 'Menyegarkan data…';
@@ -860,6 +1027,7 @@ async function refetchAll(){
   ACTIONS = data.actions || [];
   DECISIONS = data.decisions || [];
   DOCUMENTS = data.documents || [];
+  HISTORY = data.history || [];
   return true;
 }
 
