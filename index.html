@@ -319,11 +319,11 @@
     background:var(--paper); border-radius:8px; padding:10px 12px; font-size:12.5px;
   }
   .mini-row .mr-text{ flex:1; line-height:1.4; }
-  .mini-row .mr-actions{ display:flex; gap:6px; flex-shrink:0; }
-  .mini-row .mr-actions button{
+  .mr-actions{ display:flex; gap:6px; flex-shrink:0; }
+  .mr-actions button{
     background:none; border:none; cursor:pointer; font-size:12px; padding:2px 4px; opacity:.65;
   }
-  .mini-row .mr-actions button:hover{ opacity:1; }
+  .mr-actions button:hover{ opacity:1; }
   .history-list{ display:flex; flex-direction:column; gap:8px; max-height:220px; overflow-y:auto; }
   .history-item{ font-size:12px; color:var(--ink-soft); padding:8px 10px; border-left:2px solid var(--gold-soft); background:var(--paper); border-radius:0 6px 6px 0; }
   .history-item b{ color:var(--ink); }
@@ -368,12 +368,12 @@
         <div class="chip" data-status="Overdue">Overdue</div>
         <div class="chip" data-status="Done">Done</div>
       </div>
-      <button class="btn-add" onclick="openModal('action')">🔒 + Tambah Action</button>
+      <button class="btn-add" onclick="editingAction=null; openModal('action')">🔒 + Tambah Action</button>
     </div>
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th style="width:32px">#</th><th style="width:36%">Tindak Lanjut</th><th>PIC</th><th>Target</th><th>Meeting</th><th>Status</th></tr>
+          <tr><th style="width:32px">#</th><th style="width:32%">Tindak Lanjut</th><th>PIC</th><th>Target</th><th>Meeting</th><th>Status</th><th style="width:70px">Aksi</th></tr>
         </thead>
         <tbody id="trackerBody"></tbody>
       </table>
@@ -528,9 +528,33 @@ function renderTracker(){
       <td>${a.target}</td>
       <td><span class="meeting-tag">${a.meeting}</span></td>
       <td>${statusSelect(a)}</td>
+      <td>
+        <div class="mr-actions">
+          <button title="Edit" onclick='editAction(${JSON.stringify(a)})'>✏️</button>
+          <button title="Hapus" onclick='deleteActionEntry(${JSON.stringify(a)})'>🗑️</button>
+        </div>
+      </td>
     </tr>
-  `).join('') : `<tr><td colspan="6"><div class="empty"><div class="icon">📋</div>Tidak ada action item yang cocok dengan filter ini.</div></td></tr>`;
+  `).join('') : `<tr><td colspan="7"><div class="empty"><div class="icon">📋</div>Tidak ada action item yang cocok dengan filter ini.</div></td></tr>`;
   document.getElementById('cTracker').textContent = ACTIONS.length;
+}
+
+let editingAction = null;
+function editAction(a){
+  editingAction = a;
+  openModal('action', a.meeting);
+}
+
+async function deleteActionEntry(a){
+  const ok = window.confirm(`Hapus action item "${a.item}"?`);
+  if (!ok) return;
+  try {
+    await postToSheet({ op:'delete_action', meeting:a.meeting, item:a.item });
+    await refetchAll();
+    renderAll();
+  } catch (err) {
+    alert('Gagal hapus: ' + err.message);
+  }
 }
 
 function renderPicFilter(){
@@ -642,7 +666,7 @@ function openMeetingDetail(id){
     <div class="detail-section">
       <div class="detail-section-head">
         <h4>Action Items (${actions.length})</h4>
-        <button class="btn-mini" onclick="closeDetail(); openModal('action','${escapeAttr(id)}')">+ Tambah</button>
+        <button class="btn-mini" onclick="closeDetail(); editingAction=null; openModal('action','${escapeAttr(id)}')">+ Tambah</button>
       </div>
       <div class="mini-list">
         ${actions.length ? actions.map((a,i)=>`
@@ -650,6 +674,10 @@ function openMeetingDetail(id){
             <span class="dnum" style="margin-top:2px;">${i+1}</span>
             <div class="mr-text"><b>${a.item}</b><br><span style="color:var(--ink-soft)">${a.pic} · ${a.target}</span></div>
             ${statusSelect(a)}
+            <div class="mr-actions">
+              <button title="Edit" onclick='closeDetail(); editAction(${JSON.stringify(a)})'>✏️</button>
+              <button title="Hapus" onclick='deleteActionEntry(${JSON.stringify(a)})'>🗑️</button>
+            </div>
           </div>`).join('') : `<div class="empty-mini">Belum ada action item.</div>`}
       </div>
     </div>
@@ -840,18 +868,19 @@ function openModal(type, presetMeeting){
   const body = document.getElementById('modalBody');
 
   if (type === 'action') {
-    title.textContent = 'Tambah Action Item';
+    title.textContent = editingAction ? 'Edit Action Item' : 'Tambah Action Item';
+    const ea = editingAction;
     body.innerHTML = `
       <div class="field"><label>Meeting</label>
         <select id="f_meeting">${meetingOptionsHtml()}</select></div>
       <div class="field"><label>Tindak Lanjut</label>
-        <textarea id="f_item" placeholder="Deskripsi action item…"></textarea></div>
+        <textarea id="f_item" placeholder="Deskripsi action item…">${ea ? ea.item : ''}</textarea></div>
       <div class="field"><label>PIC</label>
-        <input id="f_pic" type="text" placeholder="Nama / tim penanggung jawab"></div>
+        <input id="f_pic" type="text" placeholder="Nama / tim penanggung jawab" value="${ea ? escapeAttr(ea.pic) : ''}"></div>
       <div class="field"><label>Target Waktu</label>
-        <input id="f_target" type="date"></div>
+        <input id="f_target" type="date" value="${ea ? escapeAttr(ea.target) : ''}"></div>
       <div class="field"><label>Status</label>
-        <select id="f_status">${STATUS_OPTIONS.map(s=>`<option value="${s}">${s}</option>`).join('')}</select></div>
+        <select id="f_status">${STATUS_OPTIONS.map(s=>`<option value="${s}" ${ea && ea.status===s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
     `;
   }
 
@@ -918,6 +947,7 @@ function closeModal(){
   modalType = null;
   editingDecision = null;
   editingMeeting = null;
+  editingAction = null;
 }
 
 async function submitModal(){
@@ -935,7 +965,12 @@ async function submitModal(){
       const status = document.getElementById('f_status').value;
       if (!meeting || !item || !pic) { msg.textContent = 'Meeting, tindak lanjut, dan PIC wajib diisi.'; msg.className = 'form-msg error'; return; }
       btn.disabled = true; btn.textContent = 'Menyimpan…';
-      await postToSheet({ type:'action', op:'create', data:{ meeting, item, pic, target, status } });
+      if (editingAction) {
+        await postToSheet({ op:'update_action', meeting: editingAction.meeting, oldItem: editingAction.item, data:{ item, pic, target, status } });
+        editingAction = null;
+      } else {
+        await postToSheet({ type:'action', op:'create', data:{ meeting, item, pic, target, status } });
+      }
     }
 
     if (modalType === 'decision') {
