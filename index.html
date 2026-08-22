@@ -313,6 +313,7 @@
     border-radius:7px; padding:5px 10px; font-size:11px; font-weight:600; cursor:pointer;
   }
   .btn-mini-outline:hover{ background:var(--paper); }
+  .detail-meta .full button{ margin-right:6px; margin-top:4px; }
   .mini-list{ display:flex; flex-direction:column; gap:8px; }
   .mini-row{
     display:flex; justify-content:space-between; align-items:flex-start; gap:10px;
@@ -330,6 +331,13 @@
   .history-item .htime{ float:right; color:var(--ink-soft); font-size:10.5px; }
   .empty-mini{ font-size:12px; color:var(--ink-soft); text-align:center; padding:16px; }
 
+
+  .export-btn{
+    background:rgba(255,255,255,0.15); border:none; border-radius:7px;
+    width:30px; height:30px; font-size:14px; cursor:pointer; color:#fff;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .export-btn:hover{ background:rgba(255,255,255,0.28); }
 
   @media (max-width:720px){
     .masthead, .tabbar, main{ padding-left:18px; padding-right:18px; }
@@ -421,7 +429,11 @@
   <div class="modal detail-modal">
     <div class="modal-head">
       <h3 id="detailTitle">Detail Meeting</h3>
-      <span class="x" onclick="closeDetail()">&times;</span>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <button class="export-btn" title="Print / Simpan sebagai PDF" onclick="exportMeetingPDF(currentDetailMeetingId)">🖨️</button>
+        <button class="export-btn" title="Export sebagai Word" onclick="exportMeetingWord(currentDetailMeetingId)">📝</button>
+        <span class="x" onclick="closeDetail()">&times;</span>
+      </div>
     </div>
     <div class="modal-body" id="detailBody" style="max-height:72vh; overflow-y:auto;"></div>
   </div>
@@ -613,7 +625,10 @@ function editDecision(d){
 function renderMeetings(){
   const q = document.getElementById('meetingSearch').value.toLowerCase();
   const grid = document.getElementById('meetingGrid');
-  const filtered = MEETINGS.filter(m => !q || m.title.toLowerCase().includes(q) || m.agenda.toLowerCase().includes(q));
+  const filtered = MEETINGS
+    .filter(m => !q || m.title.toLowerCase().includes(q) || m.agenda.toLowerCase().includes(q))
+    .slice()
+    .sort((a,b) => new Date(b.date) - new Date(a.date));
   grid.innerHTML = filtered.length ? filtered.map((m,idx)=>{
     const actionCount = ACTIONS.filter(a=>a.meeting===m.id).length;
     const overdueCount = ACTIONS.filter(a=>a.meeting===m.id && a.status==="Overdue").length;
@@ -644,7 +659,77 @@ function renderMeetings(){
 }
 
 /* ===================== MEETING DETAIL PANEL ===================== */
+/* ===================== EXPORT (PDF / Word) ===================== */
+function gatherMeetingData(id){
+  const m = MEETINGS.find(x=>x.id===id);
+  const actions = ACTIONS.filter(a=>a.meeting===id);
+  const decisions = DECISIONS.filter(d=>d.meeting===id);
+  const docs = DOCUMENTS.filter(d=>d.meeting===id);
+  return { m, actions, decisions, docs };
+}
+
+function buildMeetingExportHtml(m, actions, decisions, docs){
+  const actionRows = actions.map((a,i) => `<tr><td>${i+1}</td><td>${a.item}</td><td>${a.pic}</td><td>${a.target}</td><td>${a.status}</td></tr>`).join('');
+  const decisionItems = decisions.map(d => `<li><b>${d.topic}:</b> ${d.text}</li>`).join('');
+  const docItems = docs.map(d => `<li><a href="${d.url}">${d.name}</a></li>`).join('');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>MoM - ${m.title}</title>
+<style>
+  body{ font-family: Calibri, Arial, sans-serif; color:#22262B; padding:30px; max-width:800px; margin:0 auto; }
+  h1{ color:#14532D; font-size:20px; margin-bottom:4px; }
+  .meta{ font-size:12px; color:#5B6270; margin-bottom:6px; }
+  h2{ color:#14532D; font-size:14px; border-bottom:1px solid #E1DFDA; padding-bottom:4px; margin-top:22px; }
+  table{ width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
+  th,td{ border:1px solid #E1DFDA; padding:6px 8px; text-align:left; vertical-align:top; }
+  th{ background:#14532D; color:#fff; }
+  ul{ font-size:12px; line-height:1.7; padding-left:20px; }
+  @media print{ body{ padding:10px; } }
+</style>
+</head><body>
+  <div class="meta">PT Energi Mega Persada Tbk — Human Capital Services &amp; GPA</div>
+  <h1>${m.title}</h1>
+  <div class="meta">Tanggal: ${m.date} &nbsp;|&nbsp; Notulis: ${m.notulis || '-'}</div>
+  <div class="meta"><b>Agenda:</b> ${m.agenda || '-'}</div>
+
+  <h2>Action Items (${actions.length})</h2>
+  <table><tr><th>#</th><th>Tindak Lanjut</th><th>PIC</th><th>Target</th><th>Status</th></tr>${actionRows || '<tr><td colspan="5">Tidak ada.</td></tr>'}</table>
+
+  <h2>Keputusan (${decisions.length})</h2>
+  <ul>${decisionItems || '<li>Tidak ada.</li>'}</ul>
+
+  <h2>Dokumen (${docs.length})</h2>
+  <ul>${docItems || '<li>Tidak ada.</li>'}</ul>
+</body></html>`;
+}
+
+function exportMeetingPDF(id){
+  const { m, actions, decisions, docs } = gatherMeetingData(id);
+  if (!m) return;
+  const html = buildMeetingExportHtml(m, actions, decisions, docs);
+  const w = window.open('', '_blank');
+  if (!w) { alert('Pop-up diblokir browser — izinkan pop-up buat situs ini dulu, lalu coba lagi.'); return; }
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 350);
+}
+
+function exportMeetingWord(id){
+  const { m, actions, decisions, docs } = gatherMeetingData(id);
+  if (!m) return;
+  const html = buildMeetingExportHtml(m, actions, decisions, docs);
+  const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `MoM - ${m.title}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+let currentDetailMeetingId = null;
 function openMeetingDetail(id){
+  currentDetailMeetingId = id;
   const m = MEETINGS.find(x=>x.id===id);
   if (!m) return;
   const actions = ACTIONS.filter(a=>a.meeting===id);
@@ -858,7 +943,8 @@ async function deleteDocument(meeting, url){
 let modalType = null;
 
 function meetingOptionsHtml(){
-  return MEETINGS.map(m => `<option value="${escapeAttr(m.id)}">${m.id} — ${m.title}</option>`).join('');
+  const sorted = MEETINGS.slice().sort((a,b) => new Date(b.date) - new Date(a.date));
+  return sorted.map(m => `<option value="${escapeAttr(m.id)}">${m.id} — ${m.title}</option>`).join('');
 }
 
 function openModal(type, presetMeeting){
@@ -1042,6 +1128,7 @@ async function submitModal(){
 }
 
 function renderAll(){
+  sortMeetingsNewestFirst();
   renderStats();
   renderPicFilter();
   renderTracker();
@@ -1063,7 +1150,12 @@ async function refetchAll(){
   DECISIONS = data.decisions || [];
   DOCUMENTS = data.documents || [];
   HISTORY = data.history || [];
+  sortMeetingsNewestFirst();
   return true;
+}
+
+function sortMeetingsNewestFirst(){
+  MEETINGS.sort((a,b) => new Date(b.date) - new Date(a.date));
 }
 
 async function init(){
